@@ -5,7 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
-const Database = require('better-sqlite3');
+// libsql: drop-in, synchronous, better-sqlite3-compatible API + Turso cloud sync
+const Database = require('libsql');
 
 // Load .env file if present
 const envPath = path.join(__dirname, '.env');
@@ -100,8 +101,28 @@ const io = new Server(server, {
 });
 
 // ── DATABASE SETUP ──────────────────────────────────────────────────────────
+// If Turso creds are present, use an embedded replica (local file synced to the
+// cloud) so data survives restarts. Otherwise fall back to a plain local file.
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'orders.db');
-const db = new Database(dbPath);
+const TURSO_URL   = process.env.TURSO_DATABASE_URL;
+const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN;
+
+let db, _syncEnabled = false;
+if (TURSO_URL && TURSO_TOKEN) {
+  db = new Database(dbPath, { syncUrl: TURSO_URL, authToken: TURSO_TOKEN });
+  try { db.sync(); _syncEnabled = true; console.log('[db] Turso embedded replica — synced'); }
+  catch (e) { console.error('[db] initial sync failed:', e.message); }
+} else {
+  db = new Database(dbPath);
+  console.log('[db] local SQLite only (no Turso creds) — data is NOT durable');
+}
+
+// Push local writes up to Turso. Called after mutations + on an interval.
+function dbSync() {
+  if (!_syncEnabled) return;
+  try { db.sync(); } catch (e) { console.error('[db] sync error:', e.message); }
+}
+if (_syncEnabled) setInterval(dbSync, 15000); // safety net every 15s
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
@@ -653,7 +674,7 @@ app.post('/api/orders', (req, res) => {
   ).get(orderId);
   const waitMinutes = Math.max(5, activeCount * 4 + 5);
 
-  io.emit('new_order', order);
+  io.emit('new_order', order);  dbSync();
   waOrderReceived(order); // WhatsApp: order received
   res.json({ success: true, order_id: orderId, wait_minutes: waitMinutes, order });
 });
@@ -692,7 +713,7 @@ app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
   db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, req.params.id);
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-  io.emit('order_updated', order);
+  io.emit('order_updated', order);  dbSync();
   // WhatsApp notifications on key status transitions
   if (status === 'preparing') waPreparingStarted(order);
   if (status === 'done')      waOrderReady(order);
@@ -711,7 +732,7 @@ app.patch('/api/orders/:id', requireAuth, (req, res) => {
   db.prepare(`UPDATE orders SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-  io.emit('order_updated', order);
+  io.emit('order_updated', order);  dbSync();
   res.json(order);
 });
 
@@ -726,7 +747,7 @@ app.patch('/api/orders/:id/discount', requireAuth, (req, res) => {
   db.prepare('UPDATE orders SET discount = ?, total = ? WHERE id = ?').run(discountAmt, newTotal, req.params.id);
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   updated.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id);
-  io.emit('order_updated', updated);
+  io.emit('order_updated', updated);  dbSync();
   res.json(updated);
 });
 
@@ -742,7 +763,7 @@ app.patch('/api/orders/:id/tip', requireAuth, (req, res) => {
   db.prepare('UPDATE orders SET tip = ?, total = ? WHERE id = ?').run(Number(tip), newTotal, req.params.id);
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   updated.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id);
-  io.emit('order_updated', updated);
+  io.emit('order_updated', updated);  dbSync();
   res.json(updated);
 });
 
