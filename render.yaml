@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: cafe-pos
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    envVars:
+      - key: NODE_VERSION
+        value: 22.5.0
+      - key: PUBLIC_URL
+        sync: false        # set to your Render URL e.g. https://cafe-pos.onrender.com
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: POS_PIN
+        sync: false
+      - key: FAST2SMS_API_KEY
+        sync: false
+      - key: ULTRAMSG_INSTANCE
+        sync: false
+      - key: ULTRAMSG_TOKEN
+        sync: false

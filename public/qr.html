@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Restaurant — QR Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange:  #D4552A;
+      --orange-d:#B8421A;
+      --cream:   #FAF5EC;
+      --dark:    #1A0D06;
+      --text:    #2C180A;
+      --muted:   #7A5C42;
+      --border:  rgba(0,0,0,0.08);
+    }
+    body { font-family: 'DM Sans', sans-serif; background: #f4f4f4; color: var(--text); min-height: 100vh; }
+
+    header {
+      background: var(--dark);
+      padding: 0.9rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand { font-family: 'Playfair Display', serif; color: var(--cream); font-size: 1.1rem; }
+    .brand em { font-style: italic; color: var(--orange); }
+
+    .content { max-width: 780px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    .setup-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .setup-card h2 { font-size: 1rem; font-weight: 600; color: var(--dark); margin-bottom: 1.2rem; }
+
+    .fields-row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1rem; }
+    .field { flex: 1; min-width: 180px; }
+    .field label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.38rem;
+    }
+    .field input {
+      width: 100%;
+      padding: 0.7rem 0.9rem;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.92rem;
+      color: var(--dark);
+      outline: none;
+      transition: border-color 0.18s;
+      background: #fafafa;
+    }
+    .field input:focus { border-color: var(--orange); background: #fff; }
+
+    .btn {
+      padding: 0.7rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-orange { background: var(--orange); color: #fff; }
+    .btn-orange:hover { background: var(--orange-d); }
+    .btn-dark   { background: var(--dark); color: #fff; }
+
+    /* ── QR GRID ── */
+    .qr-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1.25rem;
+    }
+
+    /* ── QR CARD (screen) ── */
+    .qr-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.07);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .qr-canvas-wrap {
+      background: #fff;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 1rem;
+      display: inline-block;
+    }
+    .qr-canvas-wrap canvas { display: block; }
+    .qr-label-top {
+      font-family: 'Playfair Display', serif;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.15rem;
+    }
+    .qr-table-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--dark);
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+    .qr-url {
+      font-size: 0.62rem;
+      color: #bbb;
+      word-break: break-all;
+      margin-bottom: 0.9rem;
+    }
+    .dl-btn {
+      padding: 0.38rem 1rem;
+      background: var(--orange);
+      color: #fff;
+      border: none;
+      border-radius: 2rem;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.74rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* ── PRINT STYLES ── */
+    @media print {
+      body { background: #fff; }
+      header, .setup-card, .print-bar { display: none !important; }
+      .qr-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0;
+      }
+      .qr-card {
+        border: 1px solid #ddd;
+        border-radius: 0;
+        page-break-inside: avoid;
+        padding: 1.2rem 0.8rem;
+        box-shadow: none;
+      }
+      .dl-btn { display: none; }
+    }
+
+    /* ── PRINT BAR ── */
+    .print-bar {
+      background: #fff;
+      border-radius: 14px;
+      padding: 1rem 1.5rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .print-bar p { font-size: 0.85rem; color: var(--muted); }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem 2rem;
+      color: var(--muted);
+    }
+    .empty-state p { font-size: 0.88rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><em>My</em> RESTAURANT</div>
+  <span style="font-size:0.78rem;color:rgba(250,245,236,0.4);letter-spacing:0.1em;text-transform:uppercase">QR Generator</span>
+</header>
+
+<div class="content">
+
+  <div class="setup-card">
+    <h2>Generate Table QR Codes</h2>
+    <div class="fields-row">
+      <div class="field">
+        <label>Your Website URL</label>
+        <input id="baseUrl" type="text" placeholder="https://your-app.railway.app">
+      </div>
+      <div class="field" style="max-width:130px">
+        <label>Number of Tables</label>
+        <input id="tableCount" type="number" value="10" min="1" max="100">
+      </div>
+      <div class="field" style="max-width:130px">
+        <label>Start From Table #</label>
+        <input id="startTable" type="number" value="1" min="1">
+      </div>
+      <div style="display:flex;align-items:flex-end">
+        <button class="btn btn-orange" onclick="generate()">Generate QR Codes</button>
+      </div>
+    </div>
+    <p style="font-size:0.75rem;color:var(--muted)">
+      Each QR code links to <code style="background:#f0f0f0;padding:0.1rem 0.4rem;border-radius:4px">[URL]/?table=N</code> — customers scan and land on the menu with their table pre-selected.
+    </p>
+  </div>
+
+  <div id="printBar" class="print-bar" style="display:none">
+    <p>✅ <strong id="qrCount">0</strong> QR codes ready — print and place them on your tables.</p>
+    <button class="btn btn-dark" onclick="window.print()">🖨 Print All</button>
+  </div>
+
+  <div id="qrGrid" class="qr-grid">
+    <div class="empty-state">
+      <div style="font-size:2.5rem">📱</div>
+      <p>Enter your URL and number of tables, then click Generate.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Pre-fill URL from current origin (only when served over http/https)
+  const origin = window.location.origin;
+  if (origin && origin !== 'null' && !origin.startsWith('file')) {
+    document.getElementById('baseUrl').value = origin;
+  }
+
+  function generate() {
+    const base  = document.getElementById('baseUrl').value.trim().replace(/\/$/, '');
+    const count = parseInt(document.getElementById('tableCount').value) || 10;
+    const start = parseInt(document.getElementById('startTable').value) || 1;
+
+    if (!base) { alert('Please enter your website URL first.'); return; }
+
+    const grid = document.getElementById('qrGrid');
+    grid.innerHTML = '';
+
+    for (let t = start; t < start + count; t++) {
+      const url = `${base}/menu?table=${t}`;
+
+      // Card wrapper
+      const card = document.createElement('div');
+      card.className = 'qr-card';
+
+      // My Restaurant branding on printout
+      card.innerHTML = `
+        <div class="qr-label-top"><em style="font-family:'Playfair Display',serif;font-style:italic">My</em> RESTAURANT</div>
+        <div class="qr-table-num">Table ${t}</div>
+        <div class="qr-canvas-wrap" id="qr-wrap-${t}"></div>
+        <div class="qr-url">${url}</div>
+        <button class="dl-btn" onclick="downloadQR(${t}, '${url}')">Download PNG</button>
+      `;
+      grid.appendChild(card);
+
+      // Generate QR into the wrap div
+      new QRCode(document.getElementById(`qr-wrap-${t}`), {
+        text: url,
+        width: 160,
+        height: 160,
+        colorDark: '#1A0D06',
+        colorLight: '#FFFFFF',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+
+    // Show print bar
+    document.getElementById('qrCount').textContent = count;
+    document.getElementById('printBar').style.display = 'flex';
+  }
+
+  function downloadQR(tableNum, url) {
+    // Find the canvas inside the wrap
+    const wrap   = document.getElementById(`qr-wrap-${tableNum}`);
+    const canvas = wrap.querySelector('canvas');
+    if (!canvas) { alert('QR not ready yet, try again in a moment.'); return; }
+
+    // Draw a nice PNG with branding
+    const size = 320;
+    const out  = document.createElement('canvas');
+    out.width  = size;
+    out.height = size + 80;
+    const ctx  = out.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#FAF5EC';
+    ctx.fillRect(0, 0, out.width, out.height);
+
+    // Border
+    ctx.strokeStyle = '#D4552A';
+    ctx.lineWidth   = 3;
+    ctx.strokeRect(4, 4, out.width - 8, out.height - 8);
+
+    // QR code (scaled up)
+    ctx.drawImage(canvas, 40, 50, size - 80, size - 80);
+
+    // Top label
+    ctx.fillStyle  = '#D4552A';
+    ctx.font       = 'italic bold 18px Georgia, serif';
+    ctx.textAlign  = 'center';
+    ctx.fillText('My RESTAURANT', size / 2, 34);
+
+    // Bottom table number
+    ctx.fillStyle = '#1A0D06';
+    ctx.font      = 'bold 22px DM Sans, sans-serif';
+    ctx.fillText(`Table ${tableNum}`, size / 2, size + 58);
+
+    // Download
+    const link    = document.createElement('a');
+    link.download = `restaurant-table-${tableNum}.png`;
+    link.href     = out.toDataURL('image/png');
+    link.click();
+  }
+</script>
+</body>
+</html>

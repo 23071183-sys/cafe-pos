@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Status — My Restaurant</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange: #D4552A;
+      --cream:  #FAF5EC;
+      --dark:   #1A0D06;
+      --text:   #2C180A;
+      --muted:  #7A5C42;
+      --green:  #16A34A;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--dark);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      color: var(--cream);
+    }
+
+    /* ── LOGO ── */
+    .brand {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.25rem;
+      color: var(--cream);
+      margin-bottom: 2.5rem;
+      letter-spacing: 0.04em;
+    }
+    .brand em { font-style: italic; color: var(--orange); }
+
+    /* ── CARD ── */
+    .card {
+      background: rgba(250,245,236,0.05);
+      border: 1px solid rgba(250,245,236,0.1);
+      border-radius: 20px;
+      padding: 2rem 2rem;
+      width: min(420px, 100%);
+      text-align: center;
+    }
+
+    .order-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    .order-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 2.2rem;
+      color: var(--cream);
+      margin-bottom: 0.3rem;
+    }
+    .order-table {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    /* ── PROGRESS STEPS ── */
+    .steps {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 2rem;
+      position: relative;
+    }
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1;
+      position: relative;
+      z-index: 1;
+    }
+    .step-icon {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      border: 2px solid rgba(250,245,236,0.15);
+      background: rgba(250,245,236,0.04);
+      transition: all 0.5s ease;
+      position: relative;
+      z-index: 2;
+    }
+    .step-label {
+      font-size: 0.68rem;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: rgba(250,245,236,0.35);
+      transition: color 0.5s ease;
+    }
+
+    /* Connector lines */
+    .step-connector {
+      flex: 1;
+      height: 2px;
+      background: rgba(250,245,236,0.1);
+      margin-bottom: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      border-radius: 1px;
+    }
+    .step-connector-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--orange);
+      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+      border-radius: 1px;
+    }
+
+    /* Active / Done states */
+    .step.active .step-icon {
+      border-color: var(--orange);
+      background: rgba(212,85,42,0.15);
+      box-shadow: 0 0 0 6px rgba(212,85,42,0.08);
+    }
+    .step.active .step-label { color: var(--orange); }
+
+    .step.done .step-icon {
+      border-color: var(--green);
+      background: rgba(22,163,74,0.15);
+    }
+    .step.done .step-label { color: var(--green); }
+
+    /* Done step: pulse ring for current active */
+    .step.active .step-icon::after {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      border: 2px solid rgba(212,85,42,0.3);
+      animation: pulse-ring 2s ease-out infinite;
+    }
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.85); opacity: 1; }
+      100% { transform: scale(1.3);  opacity: 0; }
+    }
+
+    /* ── STATUS MESSAGE ── */
+    .status-msg {
+      font-size: 1rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      min-height: 1.4rem;
+      transition: opacity 0.3s;
+    }
+    .status-sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+      min-height: 1.2rem;
+    }
+
+    /* ── ORDER ITEMS ── */
+    .items-list {
+      background: rgba(250,245,236,0.04);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      text-align: left;
+      margin-bottom: 1.2rem;
+    }
+    .items-list-title {
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+    .item-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      padding: 0.22rem 0;
+      border-bottom: 1px solid rgba(250,245,236,0.06);
+      color: rgba(250,245,236,0.8);
+    }
+    .item-line:last-child { border-bottom: none; }
+    .item-line .qty { color: var(--orange); font-weight: 600; margin-right: 0.5rem; }
+    .item-total {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding-top: 0.6rem;
+      color: var(--cream);
+    }
+
+    /* ── READY BANNER ── */
+    .ready-banner {
+      background: rgba(22,163,74,0.12);
+      border: 1px solid rgba(22,163,74,0.3);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1.2rem;
+      display: none;
+    }
+    .ready-banner.show { display: block; }
+    .ready-emoji { font-size: 2rem; margin-bottom: 0.4rem; }
+    .ready-text { font-size: 1rem; font-weight: 600; color: #4ade80; }
+    .ready-sub  { font-size: 0.78rem; color: rgba(74,222,128,0.65); margin-top: 0.2rem; }
+
+    /* ── ORDER NEW ── */
+    .new-order-btn {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.7rem 1.8rem;
+      background: var(--orange);
+      color: #fff;
+      border: none;
+      border-radius: 2rem;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .new-order-btn:hover { opacity: 0.85; }
+
+    /* ── NOT FOUND ── */
+    .not-found { display: none; }
+    .not-found.show { display: block; }
+    .nf-emoji { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .nf-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .nf-sub { font-size: 0.82rem; color: var(--muted); }
+
+    /* ── LOADING ── */
+    .loading-dots span {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--orange);
+      margin: 0 2px;
+      animation: blink 1.2s infinite;
+    }
+    .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.2; }
+      40%            { opacity: 1;   }
+    }
+
+    /* ── NOTIFICATION BANNER ── */
+    .notif-banner {
+      margin-top: 1rem;
+      padding: 0.6rem 1rem;
+      background: rgba(212,85,42,0.1);
+      border: 1px solid rgba(212,85,42,0.2);
+      border-radius: 8px;
+      font-size: 0.74rem;
+      color: rgba(250,245,236,0.55);
+      cursor: pointer;
+      transition: background 0.2s;
+      display: none;
+    }
+    .notif-banner.show { display: block; }
+    .notif-banner:hover { background: rgba(212,85,42,0.18); }
+
+    @media (max-width: 480px) {
+      .step-label { font-size: 0.6rem; }
+      .step-icon  { width: 44px; height: 44px; font-size: 1.1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="brand"><em>My</em> RESTAURANT</div>
+
+<!-- NOT FOUND STATE -->
+<div class="card not-found" id="notFound">
+  <div class="nf-emoji">🔍</div>
+  <div class="nf-title">Order not found</div>
+  <div class="nf-sub">The order ID doesn't exist or the link may be incorrect.</div>
+  <br>
+  <a class="new-order-btn" href="/menu">Back to Menu</a>
+</div>
+
+<!-- ORDER CARD -->
+<div class="card" id="orderCard" style="display:none">
+
+  <div class="order-label">Your Order</div>
+  <div class="order-num" id="orderNum">#—</div>
+  <div class="order-table" id="orderTable">Loading…</div>
+
+  <!-- STEPS -->
+  <div class="steps">
+    <div class="step" id="step-pending">
+      <div class="step-icon">📋</div>
+      <div class="step-label">Received</div>
+    </div>
+    <div class="step-connector"><div class="step-connector-fill" id="conn1"></div></div>
+    <div class="step" id="step-preparing">
+      <div class="step-icon">👨‍🍳</div>
+      <div class="step-label">Preparing</div>
+    </div>
+    <div class="step-connector"><div class="step-connector-fill" id="conn2"></div></div>
+    <div class="step" id="step-done">
+      <div class="step-icon">✅</div>
+      <div class="step-label">Ready!</div>
+    </div>
+  </div>
+
+  <div class="status-msg" id="statusMsg">
+    <span class="loading-dots"><span></span><span></span><span></span></span>
+  </div>
+  <div class="status-sub" id="statusSub"></div>
+
+  <!-- READY BANNER -->
+  <div class="ready-banner" id="readyBanner">
+    <div class="ready-emoji">🎉</div>
+    <div class="ready-text">Your order will reach you shortly!</div>
+    <div class="ready-sub">Sit back and relax — it's on its way 🍽️</div>
+  </div>
+
+  <!-- ITEMS -->
+  <div class="items-list" id="itemsList">
+    <div class="items-list-title">Your Items</div>
+    <div id="itemsInner"></div>
+    <div class="item-total">
+      <span>Total</span>
+      <span id="orderTotal">—</span>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION PROMPT -->
+  <div class="notif-banner" id="notifBanner" onclick="requestNotifPermission()">
+    🔔 Tap to get notified when your order is ready
+  </div>
+
+  <a class="new-order-btn" href="/menu">Order More</a>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const params  = new URLSearchParams(location.search);
+  const orderId = params.get('order');
+
+  const orderCard  = document.getElementById('orderCard');
+  const notFound   = document.getElementById('notFound');
+  const orderNum   = document.getElementById('orderNum');
+  const orderTable = document.getElementById('orderTable');
+  const statusMsg  = document.getElementById('statusMsg');
+  const statusSub  = document.getElementById('statusSub');
+  const itemsInner = document.getElementById('itemsInner');
+  const orderTotal = document.getElementById('orderTotal');
+  const readyBanner= document.getElementById('readyBanner');
+  const notifBanner= document.getElementById('notifBanner');
+
+  let currentStatus = null;
+  let socket;
+
+  // ── STATUS RENDER ──
+  const STATUS_DATA = {
+    pending:   { msg: 'Order received!',      sub: 'The kitchen has your order — hang tight…', step: 0 },
+    preparing: { msg: 'Being prepared now',   sub: 'Your food is being made — won\'t be long!', step: 1 },
+    done:      { msg: 'Your order will reach you shortly! 🎉', sub: 'Sit back and relax — it\'s on its way to your table.', step: 2 }
+  };
+
+  function renderStatus(status) {
+    if (status === currentStatus) return;
+    currentStatus = status;
+
+    const d = STATUS_DATA[status] || STATUS_DATA.pending;
+    statusMsg.textContent = d.msg;
+    statusSub.textContent = d.sub;
+
+    // Steps
+    const steps = ['pending','preparing','done'];
+    const si = d.step;
+
+    steps.forEach((s, idx) => {
+      const el = document.getElementById('step-' + s);
+      el.classList.remove('active','done');
+      if (idx < si)  el.classList.add('done');
+      if (idx === si) el.classList.add('active');
+    });
+
+    // Connectors
+    document.getElementById('conn1').style.width = si >= 1 ? '100%' : '0%';
+    document.getElementById('conn2').style.width = si >= 2 ? '100%' : '0%';
+
+    // Ready banner
+    if (status === 'done') {
+      readyBanner.classList.add('show');
+      fireNotification();
+    } else {
+      readyBanner.classList.remove('show');
+    }
+  }
+
+  function renderOrder(order) {
+    orderNum.textContent   = '#' + order.id;
+    orderTable.textContent = 'Table ' + order.table_number + (order.customer_name ? ' · ' + order.customer_name : '');
+    orderTotal.textContent = '₹' + order.total;
+
+    itemsInner.innerHTML = order.items.map(i =>
+      `<div class="item-line"><span><span class="qty">${i.quantity}×</span>${i.item_name}</span><span>₹${i.item_price * i.quantity}</span></div>`
+    ).join('');
+
+    renderStatus(order.status);
+  }
+
+  // ── NOTIFICATIONS ──
+  function checkNotifPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      notifBanner.classList.add('show');
+    }
+  }
+
+  function requestNotifPermission() {
+    if (!('Notification' in window)) return;
+    Notification.requestPermission().then(p => {
+      if (p === 'granted') notifBanner.classList.remove('show');
+    });
+  }
+
+  function fireNotification() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      new Notification('Your My Restaurant order is ready! 🎉', {
+        body: 'Please collect your order from the counter.',
+        icon: '/favicon.ico'
+      });
+    }
+  }
+
+  // ── LOAD ORDER ──
+  async function loadOrder() {
+    if (!orderId) { showNotFound(); return; }
+    try {
+      const r = await fetch('/api/orders/' + orderId);
+      if (!r.ok) { showNotFound(); return; }
+      const order = await r.json();
+      notFound.classList.remove('show');
+      orderCard.style.display = 'block';
+      renderOrder(order);
+      checkNotifPermission();
+    } catch (e) {
+      showNotFound();
+    }
+  }
+
+  function showNotFound() {
+    notFound.classList.add('show');
+    orderCard.style.display = 'none';
+  }
+
+  // ── SOCKET.IO ──
+  function connectSocket() {
+    socket = io();
+    socket.on('order_updated', function(order) {
+      if (String(order.id) === String(orderId)) {
+        renderStatus(order.status);
+      }
+    });
+  }
+
+  // Init
+  loadOrder();
+  connectSocket();
+</script>
+</body>
+</html>
