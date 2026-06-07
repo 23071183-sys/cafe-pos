@@ -8,11 +8,11 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      /* Claude warm palette */
-      --orange: #D97757; --orange-d: #C15F3C;
-      --green:  #5E8C61; --red: #C8553D; --amber: #C99A3C;
-      --bg:     #F0EEE6; --s1: #FAF9F5; --s2: #FFFFFF; --s3: #F2EFE6;
-      --border: #E5E1D6; --text: #1F1E1D; --muted: #A8A49B; --dim: #83807A;
+      /* Dark + champagne gold luxe */
+      --orange: #C9A24B; --orange-d: #A8862F;
+      --green:  #7BAE6E; --red: #D2664F; --amber: #C9A24B;
+      --bg:     #14110E; --s1: #1F1B15; --s2: #251F18; --s3: #2A241C;
+      --border: #342D22; --text: #F3EEE2; --muted: #6E6656; --dim: #9A917E;
     }
     html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); }
 
@@ -360,12 +360,12 @@
 </div>
 
 <!-- PIN OVERLAY -->
-<div id="pinOverlay" style="display:none;position:fixed;inset:0;background:#E8E4D8;z-index:999;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem">
-  <div style="font-size:1.5rem;font-weight:800;color:#1F1E1D;letter-spacing:-.01em;font-family:'Fraunces',serif">MY RESTAURANT</div>
+<div id="pinOverlay" style="display:none;position:fixed;inset:0;background:#14110E;z-index:999;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem">
+  <div style="font-size:1.5rem;font-weight:800;color:#F3EEE2;letter-spacing:-.01em;font-family:'Fraunces',serif">MY RESTAURANT</div>
   <div style="font-size:.85rem;color:#83807A;letter-spacing:.08em;text-transform:uppercase">POS Terminal</div>
   <div style="position:relative;width:200px">
     <input id="pinInput" type="password" inputmode="numeric" maxlength="8" placeholder="Enter PIN"
-      style="background:#FFFFFF;border:1.5px solid #E5E1D6;border-radius:10px;color:#1F1E1D;font-size:1.4rem;letter-spacing:.35em;text-align:center;padding:.7rem 2.8rem .7rem 1.4rem;width:200px;outline:none;font-family:'Inter',sans-serif"
+      style="background:#251F18;border:1.5px solid #342D22;border-radius:10px;color:#F3EEE2;font-size:1.4rem;letter-spacing:.35em;text-align:center;padding:.7rem 2.8rem .7rem 1.4rem;width:200px;outline:none;font-family:'Inter',sans-serif"
       onkeydown="if(event.key==='Enter')posLoginInput()">
     <button type="button" onclick="const i=document.getElementById('pinInput'),s=i.type==='password';i.type=s?'text':'password';this.style.color=s?'#D97757':'#555'"
       style="position:absolute;right:.7rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#555;display:flex;align-items:center">
