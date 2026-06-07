@@ -500,56 +500,6 @@ app.get('/api/menu', (req, res) => {
 
   // Ensure all percent-based coupons have no minimum order requirement
   db.prepare("UPDATE coupons SET min_order = 0 WHERE discount_type = 'percent'").run();
-
-  // Bulk coupon batch — INSERT OR IGNORE so re-deploys don't duplicate
-  const bulkIns = db.prepare(`INSERT OR IGNORE INTO coupons (code, discount_type, discount_value, min_order, max_uses, description) VALUES (?, 'percent', ?, 0, 1, ?)`);
-  const bulkTx  = db.transaction((coupons) => { for (const c of coupons) bulkIns.run(c.code, c.pct, `${c.pct}% off`); });
-  bulkTx([
-    // ── 50% off (20 codes) ──
-    {code:'LS50-FJALWP',pct:50},{code:'LS50-3KGZDB',pct:50},{code:'LS50-4H96G9',pct:50},
-    {code:'LS50-DWQ3B5',pct:50},{code:'LS50-QYZFND',pct:50},{code:'LS50-2RFCMJ',pct:50},
-    {code:'LS50-LEPTNB',pct:50},{code:'LS50-LZJ4LQ',pct:50},{code:'LS50-DHQ97G',pct:50},
-    {code:'LS50-3EAX62',pct:50},{code:'LS50-NP2RUS',pct:50},{code:'LS50-253YGM',pct:50},
-    {code:'LS50-JXEMQJ',pct:50},{code:'LS50-L6TLBF',pct:50},{code:'LS50-M7A4EN',pct:50},
-    {code:'LS50-8HER74',pct:50},{code:'LS50-YKDJRA',pct:50},{code:'LS50-PT9KK2',pct:50},
-    {code:'LS50-KWX2RC',pct:50},{code:'LS50-EM38C7',pct:50},
-    // ── 30% off (30 codes) ──
-    {code:'LS30-S7BULD',pct:30},{code:'LS30-CXYV92',pct:30},{code:'LS30-395EMR',pct:30},
-    {code:'LS30-M37NCR',pct:30},{code:'LS30-4CXYLM',pct:30},{code:'LS30-RD9QXQ',pct:30},
-    {code:'LS30-FE4D2X',pct:30},{code:'LS30-SBBFUT',pct:30},{code:'LS30-87P4SB',pct:30},
-    {code:'LS30-PA6C3V',pct:30},{code:'LS30-EFHDND',pct:30},{code:'LS30-JWNJ9C',pct:30},
-    {code:'LS30-4QCGLZ',pct:30},{code:'LS30-XVPTMD',pct:30},{code:'LS30-EUQXKG',pct:30},
-    {code:'LS30-NXF7J9',pct:30},{code:'LS30-MN5LYB',pct:30},{code:'LS30-KEXX6T',pct:30},
-    {code:'LS30-TAXQ4T',pct:30},{code:'LS30-5DDYYM',pct:30},{code:'LS30-KJL7S7',pct:30},
-    {code:'LS30-THMKZ7',pct:30},{code:'LS30-9H4VYW',pct:30},{code:'LS30-6PHTR6',pct:30},
-    {code:'LS30-FW2LWP',pct:30},{code:'LS30-67673X',pct:30},{code:'LS30-3Q4B2Z',pct:30},
-    {code:'LS30-5252C2',pct:30},{code:'LS30-6XPKZZ',pct:30},{code:'LS30-A85PMY',pct:30},
-    // ── 10% off (30 codes) ──
-    {code:'LS10-5R83MM',pct:10},{code:'LS10-8F396J',pct:10},{code:'LS10-TEJAUN',pct:10},
-    {code:'LS10-UN8YW5',pct:10},{code:'LS10-5763Q8',pct:10},{code:'LS10-GUUXJF',pct:10},
-    {code:'LS10-6CM7LB',pct:10},{code:'LS10-38G79R',pct:10},{code:'LS10-8KQY8P',pct:10},
-    {code:'LS10-4CTVTZ',pct:10},{code:'LS10-7ZV68H',pct:10},{code:'LS10-8887YX',pct:10},
-    {code:'LS10-LZ44LN',pct:10},{code:'LS10-329TEN',pct:10},{code:'LS10-GXLVMY',pct:10},
-    {code:'LS10-CXLN2C',pct:10},{code:'LS10-M27PHB',pct:10},{code:'LS10-6DMSNB',pct:10},
-    {code:'LS10-BNJX3U',pct:10},{code:'LS10-5SYNJS',pct:10},{code:'LS10-Z37WRD',pct:10},
-    {code:'LS10-3NPGPH',pct:10},{code:'LS10-JYZT4F',pct:10},{code:'LS10-YX8CBD',pct:10},
-    {code:'LS10-EMHCAC',pct:10},{code:'LS10-F3VXQ5',pct:10},{code:'LS10-PYTBH8',pct:10},
-    {code:'LS10-THWGUU',pct:10},{code:'LS10-FZ9ZDF',pct:10},{code:'LS10-PRWSUW',pct:10},
-    // ── 15% off (30 codes) ──
-    {code:'LS15-BL7KFD',pct:15},{code:'LS15-YA9DT7',pct:15},{code:'LS15-LQL2WF',pct:15},
-    {code:'LS15-ZKH2MT',pct:15},{code:'LS15-72TN44',pct:15},{code:'LS15-ELSYEM',pct:15},
-    {code:'LS15-GXEUJV',pct:15},{code:'LS15-BVGKYW',pct:15},{code:'LS15-FTCMH7',pct:15},
-    {code:'LS15-MP6XW9',pct:15},{code:'LS15-A6TVX8',pct:15},{code:'LS15-ZCFCMN',pct:15},
-    {code:'LS15-5BBPC3',pct:15},{code:'LS15-HKFRJU',pct:15},{code:'LS15-PGY9U9',pct:15},
-    {code:'LS15-AXTC27',pct:15},{code:'LS15-UYQ858',pct:15},{code:'LS15-E448LC',pct:15},
-    {code:'LS15-ZHE3SE',pct:15},{code:'LS15-UDFN6Q',pct:15},{code:'LS15-WZB6GQ',pct:15},
-    {code:'LS15-CMURAT',pct:15},{code:'LS15-56F66R',pct:15},{code:'LS15-JKM7NQ',pct:15},
-    {code:'LS15-C8VZ6J',pct:15},{code:'LS15-4CTYHJ',pct:15},{code:'LS15-7TEM6F',pct:15},
-    {code:'LS15-ZF4RGB',pct:15},{code:'LS15-D4AHF4',pct:15},{code:'LS15-VJ6NXL',pct:15},
-  ]);
-
-  // Ensure all LS-prefixed batch coupons are strictly single-use across all tiers
-  db.prepare("UPDATE coupons SET max_uses = 1 WHERE code LIKE 'LS50-%' OR code LIKE 'LS30-%' OR code LIKE 'LS15-%' OR code LIKE 'LS10-%'").run();
 })();
 
 // ── COUPON API ───────────────────────────────────────────────────────────────
