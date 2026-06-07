@@ -2,22 +2,59 @@
   "name": "cafe-pos",
   "version": "1.0.0",
   "description": "White-label QR-based table ordering & POS system",
-  "main": "server.js",
+  "author": "Cafe POS",
+  "main": "electron/main.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "desktop": "electron .",
+    "rebuild": "electron-rebuild -f -w libsql",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
   },
   "dependencies": {
+    "libsql": "^0.5.29",
     "express": "^4.18.2",
     "framer-motion": "^12.39.0",
-    "libsql": "^0.5.29",
     "qrcode": "^1.5.4",
     "socket.io": "^4.7.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "nodemon": "^3.0.3",
+    "electron": "^33.0.0",
+    "@electron/rebuild": "^3.7.0",
+    "electron-builder": "^25.1.8"
   },
   "engines": {
     "node": "22.x"
+  },
+  "build": {
+    "appId": "com.cafepos.desktop",
+    "productName": "Cafe POS",
+    "files": [
+      "electron/**/*",
+      "server.js",
+      "public/**/*",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "**/node_modules/libsql/**",
+      "**/node_modules/@libsql/**",
+      "**/node_modules/@neon-rs/**"
+    ],
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.business",
+      "identity": null
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   }
 }

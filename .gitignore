@@ -1,4 +1,8 @@
 .env
+cafepos.db
+cafepos.db-*
 orders.db
 orders.db-*
 node_modules/
+dist/
+*.dmg
