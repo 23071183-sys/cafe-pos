@@ -1212,7 +1212,7 @@ document.addEventListener('keydown', e => {
   }
 
   // Called by IntersectionObserver AND by module script (race-condition guard)
-  function _initStageWhenReady(tries) {
+  function initStageWhenReady(tries) {
     const track = document.getElementById('stageTrack');
     if (!track) return;
     if (window._threeInit) {
@@ -1222,10 +1222,11 @@ document.addEventListener('keydown', e => {
       }
       if (!stageEntered) triggerStageEntrance();
     } else if (tries < 20) {
-      setTimeout(() => _initStageWhenReady(tries + 1), 80);
+      setTimeout(() => initStageWhenReady(tries + 1), 80);
     }
   }
-  window._initStageWhenReady = () => _initStageWhenReady(0);
+  // Different name from the global, otherwise the global replaces the function and it calls itself forever.
+  window._initStageWhenReady = () => initStageWhenReady(0);
 
   function watchDessertStage() {
     const stage = document.getElementById('dessertStage');
@@ -1233,7 +1234,7 @@ document.addEventListener('keydown', e => {
     stageEntered = false;
     const obs = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting) {
-        _initStageWhenReady(0);
+        initStageWhenReady(0);
         obs.disconnect();
       }
     }, { threshold: 0.15 });
@@ -1698,13 +1699,7 @@ document.addEventListener('keydown', e => {
           `Ready in about ${wait}–${wait + 5} min. Sit back & relax ☕`;
         document.getElementById('trackOrderBtn').href = `/status?order=${orderId}`;
         document.getElementById('successScreen').classList.add('show');
-        // Redeem the coupon atomically after order success
-        if (_appliedCoupon?.code) {
-          fetch('/api/coupons/redeem', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: _appliedCoupon.code })
-          }).catch(() => {}); // fire and forget — order already placed
-        }
+        // The server counts the coupon's use when it saves the order.
         cart = {};
         updateCartBar();
         resetCoupon();

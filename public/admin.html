@@ -1228,6 +1228,8 @@ document.addEventListener('keydown', e => {
 let menuData=[], allOrders=[], tablesData=[], pendingCt=0, kfilt='active', curArea='indoor';
 let _token = sessionStorage.getItem('admin_token') || null;
 let _adminEmail = sessionStorage.getItem('admin_email') || '';
+  // Escape text before putting it into HTML (names and notes are typed by customers).
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // ── AUTH FETCH — wraps all admin API calls with Bearer token ──
 async function adminFetch(url, opts={}){
@@ -1542,10 +1544,10 @@ async function loadDash(){
   document.getElementById('recentList').innerHTML=recent.length?`
     <div class="order-rows">${recent.map(o=>`
       <div class="order-row" style="cursor:default">
-        <div class="or-tbl">T${o.table_number}<span>${o.order_type||'indoor'}</span></div>
+        <div class="or-tbl">T${o.table_number}<span>${esc(o.order_type||'indoor')}</span></div>
         <div class="or-body">
-          <div class="or-items">${(o.items||[]).map(i=>i.quantity+'× '+i.item_name).join(' · ')}</div>
-          <div class="or-meta">${o.customer_name||'Guest'} · ${new Date(o.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
+          <div class="or-items">${(o.items||[]).map(i=>i.quantity+'× '+esc(i.item_name)).join(' · ')}</div>
+          <div class="or-meta">${esc(o.customer_name||'Guest')} · ${new Date(o.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
         </div>
         <div class="or-right"><div class="or-total">₹${Number(o.total||0).toFixed(0)}</div><span class="status-pill ${o.status}">${o.status}</span></div>
       </div>`).join('')}
@@ -1796,11 +1798,11 @@ function renderCRMList(customers){
         <!-- Info -->
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-            <span style="font-size:.92rem;font-weight:700;color:#F3EEE2">${c.name}</span>
+            <span style="font-size:.92rem;font-weight:700;color:#F3EEE2">${esc(c.name)}</span>
             <span style="font-size:.62rem;font-weight:700;padding:.12rem .45rem;border-radius:9999px;background:${srcColor}18;color:${srcColor};border:1px solid ${srcColor}40">${srcLabel}</span>
           </div>
           <div style="font-size:.75rem;color:#83807A;margin-top:.12rem">
-            ${c.phone?`📞 ${c.phone} · `:''}${typeStr} · Last visit: ${lastDate}
+            ${c.phone?`📞 ${esc(c.phone)} · `:''}${esc(typeStr)} · Last visit: ${lastDate}
           </div>
         </div>
         <!-- Stats -->
@@ -1818,7 +1820,7 @@ function renderCRMList(customers){
           <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:.32rem 0;border-bottom:1px solid #251F18;font-size:.78rem;gap:.5rem">
             <div>
               <span class="status-pill ${o.status}" style="font-size:.6rem;margin-right:.3rem">${o.status}</span>
-              <span style="color:#C9C2B4">${(o.items||[]).map(i=>i.quantity+'× '+i.item_name).join(', ')||'—'}</span>
+              <span style="color:#C9C2B4">${(o.items||[]).map(i=>i.quantity+'× '+esc(i.item_name)).join(', ')||'—'}</span>
             </div>
             <div style="flex-shrink:0;text-align:right">
               <div style="font-weight:700;color:#F3EEE2">₹${Number(o.total||0).toFixed(0)}</div>
@@ -1880,13 +1882,13 @@ function kCard(o){
   return `<div class="kcard ${o.status}" id="kc-${o.id}">
     <div class="kc-top">
       <div><div class="kc-tbl">T${o.table_number}<small>Table</small></div>
-        ${o.customer_name?`<div style="font-size:.73rem;color:var(--muted);margin-top:.2rem">${o.customer_name}</div>`:''}
+        ${o.customer_name?`<div style="font-size:.73rem;color:var(--muted);margin-top:.2rem">${esc(o.customer_name)}</div>`:''}
       </div>
       <div class="kc-meta">${time}<br><span style="color:#bbb;font-size:.62rem">${age}</span><br>
-        <span class="kc-type">${o.order_type||'indoor'}</span>
+        <span class="kc-type">${esc(o.order_type||'indoor')}</span>
       </div>
     </div>
-    <div class="kc-items">${(o.items||[]).map(i=>`<div><span class="kc-qty">${i.quantity}×</span> ${i.item_name}${i.notes?` <em style="font-size:.73rem;color:var(--muted)">· ${i.notes}</em>`:''}</div>`).join('')}</div>
+    <div class="kc-items">${(o.items||[]).map(i=>`<div><span class="kc-qty">${i.quantity}×</span> ${esc(i.item_name)}${i.notes?` <em style="font-size:.73rem;color:var(--muted)">· ${esc(i.notes)}</em>`:''}</div>`).join('')}</div>
     <div class="kc-footer"><div class="kc-total">₹${Number(o.total||0).toFixed(0)}</div><div>${actions}</div></div>
   </div>`;
 }
@@ -1927,7 +1929,7 @@ function renderCats(){
   el.innerHTML=menuData.map((c,i)=>`
     <div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;background:var(--surface-2);border:1.5px solid var(--border);border-radius:var(--r);transition:border-color .15s" id="cat-row-${c.id}">
       <div style="width:20px;height:20px;border-radius:4px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;flex-shrink:0">${i+1}</div>
-      <span style="flex:1;font-size:.86rem;font-weight:600;color:var(--dark)">${c.name}</span>
+      <span style="flex:1;font-size:.86rem;font-weight:600;color:var(--dark)">${esc(c.name)}</span>
       <span style="font-size:.72rem;font-weight:500;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:99px;padding:.1rem .55rem;flex-shrink:0">${c.items?.length||0} items</span>
       <button onclick="delCat(${c.id})" title="Delete category"
         style="background:none;border:none;padding:3px;cursor:pointer;color:var(--muted-l);border-radius:4px;transition:all .15s;display:flex;align-items:center;justify-content:center;flex-shrink:0"
@@ -2115,13 +2117,13 @@ function renderOrders(){
   if(!orders.length){el.innerHTML='<div class="empty">No orders found.</div>';return;}
   el.innerHTML=`<div class="order-rows">${orders.map(o=>`
     <div class="order-row" style="cursor:default">
-      <div class="or-tbl">T${o.table_number}<span>${o.order_type||'indoor'}</span></div>
+      <div class="or-tbl">T${o.table_number}<span>${esc(o.order_type||'indoor')}</span></div>
       <div class="or-body">
-        <div class="or-items">${(o.items||[]).map(i=>i.quantity+'× '+i.item_name).join(' · ')}</div>
+        <div class="or-items">${(o.items||[]).map(i=>i.quantity+'× '+esc(i.item_name)).join(' · ')}</div>
         <div class="or-meta">
-          ${o.customer_name?o.customer_name+' · ':''}
+          ${o.customer_name?esc(o.customer_name)+' · ':''}
           ${new Date(o.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
-          ${o.waiter_name?' · 🧑‍🍳 '+o.waiter_name:''}
+          ${o.waiter_name?' · 🧑‍🍳 '+esc(o.waiter_name):''}
           ${o.discount?' · Disc ₹'+Number(o.discount).toFixed(0):''}
           &nbsp;<span style="font-size:.65rem;color:#bbb">#${String(o.id).padStart(4,'0')}</span>
         </div>
@@ -2497,7 +2499,9 @@ function exportCSV(){
       o.tip?.toFixed(2)||0,
     ]);
   });
-  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  // A cell starting with = + - or @ would run as a formula in Excel, so prefix it with '
+  const cell=c=>{let t=String(c??'');if(/^[=+\-@\t\r]/.test(t))t="'"+t;return `"${t.replace(/"/g,'""')}"`;};
+  const csv=rows.map(r=>r.map(cell).join(',')).join('\n');
   const a=document.createElement('a');
   a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
   a.download=`restaurant-orders-${document.getElementById('repFrom').value}-to-${document.getElementById('repTo').value}.csv`;
@@ -2527,7 +2531,7 @@ async function saveSetting(key,value){
 
 // ── SOCKET.IO ──
 function connectSocket(){
-  const socket=io();
+  const socket=io({auth:{token:_token}});
   socket.on('new_order',order=>{
     allOrders.unshift(order);
     _ordersRaw.unshift(order);

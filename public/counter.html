@@ -400,6 +400,8 @@
   function posHeaders() {
     return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _posToken };
   }
+  // Escape text before putting it into HTML (names and notes are typed by customers).
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   async function posLogin() {
     const pin = prompt('Enter POS PIN:');
@@ -580,9 +582,9 @@
     if (order.customer_name || order.customer_phone || order.notes) {
       custEl.style.display = 'flex';
       custEl.innerHTML = [
-        order.customer_name ? `👤 ${order.customer_name}` : '',
-        order.customer_phone ? `📞 ${order.customer_phone}` : '',
-        order.notes ? `📝 ${order.notes}` : ''
+        order.customer_name ? `👤 ${esc(order.customer_name)}` : '',
+        order.customer_phone ? `📞 ${esc(order.customer_phone)}` : '',
+        order.notes ? `📝 ${esc(order.notes)}` : ''
       ].filter(Boolean).join(' &nbsp;·&nbsp; ');
     } else {
       custEl.style.display = 'none';
@@ -714,10 +716,10 @@
       <div class="row"><span>Table: <b>${order.table_number}</b></span><span>Order: #${String(order.id).padStart(4,'0')}</span></div>
       <div class="row"><span>${new Date(order.created_at).toLocaleString('en-IN')}</span></div>
       <hr>
-      ${order.items.map(i => `<div class="row"><span class="qty">${i.quantity}×</span><span>${i.item_name}</span></div>${i.notes ? `<div style="color:#555;font-size:11px;padding-left:24px">↳ ${i.notes}</div>` : ''}`).join('')}
+      ${order.items.map(i => `<div class="row"><span class="qty">${i.quantity}×</span><span>${esc(i.item_name)}</span></div>${i.notes ? `<div style="color:#555;font-size:11px;padding-left:24px">↳ ${esc(i.notes)}</div>` : ''}`).join('')}
       <hr>
       <div class="row"><b>TOTAL: ₹${order.total}</b></div>
-      ${order.notes ? `<div style="margin-top:8px">Note: ${order.notes}</div>` : ''}
+      ${order.notes ? `<div style="margin-top:8px">Note: ${esc(order.notes)}</div>` : ''}
       </body></html>`);
     win.document.close();
     win.print();
@@ -776,7 +778,7 @@
 
   function startRealtimeSync() {
     if (_socket) return; // already running
-    _socket = io();
+    _socket = io({ auth: { token: _posToken } });
     _socket.on('new_order', order => {
       orders.unshift(order);
       renderTables();
