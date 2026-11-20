@@ -8,6 +8,7 @@ const http = require('http');
 
 const PORT = 4317; // fixed local port for the embedded server
 let mainWindow = null;
+let newCredentials = null; // set on first run; shown to the owner once
 
 // ── Config: writable data dir + first-run defaults ──────────────────────────
 function setupEnv() {
@@ -24,15 +25,23 @@ function setupEnv() {
   const cfgPath = path.join(userData, 'config.json');
   if (fs.existsSync(cfgPath)) {
     try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
-  } else {
-    // write a default config the owner can edit
-    cfg = { adminEmail: 'admin@cafe.local', adminPassword: 'admin', posPin: '1234' };
-    try { fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2)); } catch {}
+  }
+  // The server is reachable from the cafe's Wi-Fi, so never run with guessable
+  // logins. Missing or old default values get a random password and PIN, saved
+  // to config.json and shown to the owner once.
+  const weak = !cfg.adminPassword || cfg.adminPassword === 'admin' || !cfg.posPin || cfg.posPin === '1234';
+  if (weak) {
+    const crypto = require('crypto');
+    cfg.adminEmail    = cfg.adminEmail || 'admin@cafe.local';
+    cfg.adminPassword = crypto.randomBytes(9).toString('base64url');
+    cfg.posPin        = String(crypto.randomInt(100000, 1000000));
+    try { fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), { mode: 0o600 }); } catch {}
+    newCredentials = cfg;
   }
 
-  process.env.ADMIN_EMAIL    = cfg.adminEmail    || 'admin@cafe.local';
-  process.env.ADMIN_PASSWORD = cfg.adminPassword || 'admin';
-  process.env.POS_PIN        = cfg.posPin        || '1234';
+  process.env.ADMIN_EMAIL    = cfg.adminEmail;
+  process.env.ADMIN_PASSWORD = cfg.adminPassword;
+  process.env.POS_PIN        = String(cfg.posPin);
   if (cfg.tursoUrl)   process.env.TURSO_DATABASE_URL = cfg.tursoUrl;
   if (cfg.tursoToken) process.env.TURSO_AUTH_TOKEN   = cfg.tursoToken;
   process.env.PUBLIC_URL = cfg.publicUrl || `http://localhost:${PORT}`;
@@ -121,8 +130,10 @@ function createWindow() {
   goLauncher();
   // open external links in the system browser
   mainWindow.webContents.setWindowOpenHandler(({ url: u }) => {
-    if (u.startsWith('http://localhost')) return { action: 'allow' };
-    shell.openExternal(u); return { action: 'deny' };
+    if (u.startsWith(`http://localhost:${PORT}/`)) return { action: 'allow' };
+    // Only hand ordinary web links to the system browser, never file: or other schemes.
+    if (/^https?:\/\//i.test(u)) shell.openExternal(u);
+    return { action: 'deny' };
   });
 }
 
@@ -135,6 +146,14 @@ app.whenReady().then(async () => {
   }
   buildMenu();
   createWindow();
+  if (newCredentials) {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Your Cafe POS logins',
+      message: 'Write these down. You need them to sign in.',
+      detail: `Admin email: ${newCredentials.adminEmail}\nAdmin password: ${newCredentials.adminPassword}\nPOS PIN: ${newCredentials.posPin}\n\nYou can change them in:\n${path.join(app.getPath('userData'), 'config.json')}`,
+    });
+  }
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

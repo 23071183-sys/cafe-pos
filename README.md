@@ -33,6 +33,15 @@ Optional (WhatsApp order notifications via UltraMsg):
 
 The server **exits on start** if `ADMIN_PASSWORD`, `ADMIN_EMAIL`, or `POS_PIN` are missing.
 
+Optional:
+| Var | Purpose |
+|-----|---------|
+| `ALLOWED_ORIGINS` | Comma-separated list of other websites allowed to call the API (for example a separate front end). Leave unset when everything is served from this server. |
+
+Customers can only place orders while **ordering is switched on** (Admin → Settings). Staff can always add orders from the POS.
+
+The desktop app creates a random admin password and POS PIN on first launch and shows them once; they are saved in `config.json` in the app's data folder.
+
 ## Deploy on Render
 1. Push this repo to GitHub.
 2. Render → New → Web Service → connect the repo (`render.yaml` is auto-detected).

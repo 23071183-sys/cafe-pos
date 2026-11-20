@@ -50,12 +50,20 @@ async function sendWhatsApp(phone, message) {
   }
 }
 
+// The cafe's name from settings, used in customer messages and printed QR cards.
+function restaurantName() {
+  try {
+    const r = db.prepare("SELECT value FROM settings WHERE key = 'restaurant_name'").get();
+    return (r && r.value) || 'My Restaurant';
+  } catch { return 'My Restaurant'; }
+}
+
 function waOrderReceived(order) {
   if (!order.customer_phone) return;
   const name  = order.customer_name ? `, ${order.customer_name}` : '';
   const items = (order.items || []).map(i => `  • ${i.quantity}× ${i.item_name}`).join('\n');
   sendWhatsApp(order.customer_phone,
-`🍽️ *My Restaurant* — Order Received!
+`🍽️ *${restaurantName()}* — Order Received!
 
 Hi${name}! Your order *#${String(order.id).padStart(4,'0')}* is confirmed.
 📍 Table ${order.table_number}
@@ -71,7 +79,7 @@ function waPreparingStarted(order) {
   if (!order.customer_phone) return;
   const name = order.customer_name ? `, ${order.customer_name}` : '';
   sendWhatsApp(order.customer_phone,
-`👨‍🍳 *My Restaurant* — Kitchen Update
+`👨‍🍳 *${restaurantName()}* — Kitchen Update
 
 Hi${name}! Your order *#${String(order.id).padStart(4,'0')}* is now being prepared.
 We'll notify you the moment it's ready! 🙌`
@@ -82,7 +90,7 @@ function waOrderReady(order) {
   if (!order.customer_phone) return;
   const name = order.customer_name ? `, ${order.customer_name}` : '';
   sendWhatsApp(order.customer_phone,
-`✅ *My Restaurant* — Order Ready!
+`✅ *${restaurantName()}* — Order Ready!
 
 Hi${name}! Your order *#${String(order.id).padStart(4,'0')}* is ready for pickup.
 Please collect from the counter. Enjoy your meal! 🍴`
@@ -92,13 +100,9 @@ Please collect from the counter. Enjoy your meal! 🍴`
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-
-    origin: '*',
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-  }
-});
+// Browsers may only connect from this site (or ALLOWED_ORIGINS, comma separated).
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim().replace(/\/$/, '')).filter(Boolean);
+const io = new Server(server, ALLOWED_ORIGINS.length ? { cors: { origin: ALLOWED_ORIGINS } } : {});
 
 // ── DATABASE SETUP ──────────────────────────────────────────────────────────
 // If Turso creds are present, use an embedded replica (local file synced to the
@@ -263,14 +267,33 @@ if (!hsColExists) {
 }
 
 // ── MIDDLEWARE ───────────────────────────────────────────────────────────────
+// Render and similar hosts sit behind one proxy; trust it so req.ip is the
+// visitor's real address (the login rate limit is per IP).
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
-app.use(express.json());
+app.use(express.json({ limit: '50kb' }));
+
+// Free text from customers and staff: trim, cap the length, and drop < > and
+// control characters so nothing typed into a form can become HTML on another screen.
+function cleanText(v, max) {
+  return String(v ?? '').replace(/[<>\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+const ORDER_TYPES = ['indoor', 'outdoor', 'cabin'];
+const isMoney = n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1e6;
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Landing page at root
@@ -292,6 +315,7 @@ app.get('/counter', (req, res) => res.sendFile(path.join(__dirname, 'public', 'c
 app.get('/qr-tables', async (req, res) => {
   const origin = PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
   const BASE = `${origin}/menu?table=`;
+  const name = cleanText(restaurantName(), 60).replace(/&/g, '&amp;');
   const cards = await Promise.all(
     Array.from({ length: 22 }, (_, i) => i + 1).map(async t => {
       const dataUrl = await QRCode.toDataURL(BASE + t, {
@@ -300,7 +324,7 @@ app.get('/qr-tables', async (req, res) => {
       });
       return `
         <div class="card">
-          <div class="logo">My Restaurant</div>
+          <div class="logo">${name}</div>
           <div class="table-label">Table</div>
           <div class="table-num">${t}</div>
           <img src="${dataUrl}" alt="QR Table ${t}">
@@ -310,7 +334,7 @@ app.get('/qr-tables', async (req, res) => {
   );
   res.send(`<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
-<title>My Restaurant — Table QR Codes</title>
+<title>${name} — Table QR Codes</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Georgia',serif;background:#f5f0eb;padding:32px}
@@ -332,7 +356,7 @@ app.get('/qr-tables', async (req, res) => {
     .card{box-shadow:none;border:1.5px solid #ddd}
   }
 </style></head><body>
-<h1>My Restaurant</h1>
+<h1>${name}</h1>
 <p class="sub">Scan to order from your table</p>
 <div class="no-print" style="text-align:center;margin-bottom:24px">
   <button onclick="window.print()" style="background:#c0855a;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
@@ -448,32 +472,39 @@ app.get('/api/coupons/verify', (req, res) => {
   });
 });
 
+// Kept for older menu pages that still call it after ordering. Coupon use is
+// counted once, when the order is saved, so this only checks the code.
 app.post('/api/coupons/redeem', (req, res) => {
-  const code = ((req.body && req.body.code) || '').trim();
+  const code = cleanText(req.body && req.body.code, 40);
   if (!code) return res.status(400).json({ error: 'No code provided' });
-
   const coupon = db.prepare('SELECT * FROM coupons WHERE code = ? COLLATE NOCASE AND active = 1').get(code);
   if (!coupon) return res.status(404).json({ success: false, error: 'Invalid coupon code' });
-
   if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
     return res.status(400).json({ success: false, error: 'This coupon has expired' });
   }
-  if (coupon.max_uses > 0 && coupon.uses_count >= coupon.max_uses) {
-    return res.status(400).json({ success: false, error: 'This coupon has already been used' });
-  }
-
-  db.prepare('UPDATE coupons SET uses_count = uses_count + 1 WHERE id = ?').run(coupon.id);
   res.json({ success: true, code: coupon.code });
 });
 
 // ── ORDER API ────────────────────────────────────────────────────────────────
 app.post('/api/orders', (req, res) => {
-  const { table_number, customer_name, customer_phone, notes, items, coupon_code, order_type } = req.body;
-  if (!table_number || !Array.isArray(items) || !items.length) {
+  const { customer_phone, items, coupon_code } = req.body || {};
+  const staff = !!getSession(req);
+  const table_number = Number(req.body && req.body.table_number);
+  if (!Number.isInteger(table_number) || table_number < 1 || table_number > 9999 || !Array.isArray(items) || !items.length) {
     return res.status(400).json({ error: 'table_number and items are required' });
   }
+  if (items.length > 50) return res.status(400).json({ error: 'Too many items in one order' });
+  // Customers can only order while the cafe has ordering switched on; staff can always add orders.
+  const ordering = db.prepare("SELECT value FROM settings WHERE key = 'ordering_enabled'").get();
+  if (!staff && ordering && ['0', 'false'].includes(ordering.value)) {
+    return res.status(403).json({ error: 'Ordering is closed right now. Please ask your waiter.' });
+  }
+  const customer_name = cleanText(req.body.customer_name, 60);
+  const notes = cleanText(req.body.notes, 300);
+  const typeIn = cleanText(req.body.order_type, 20).toLowerCase();
+  const order_type = ORDER_TYPES.includes(typeIn) ? typeIn : 'indoor';
   // Phone optional for POS; only validate format if provided
-  if (customer_phone && !/^[6-9]\d{9}$/.test(customer_phone)) {
+  if (customer_phone && !/^[6-9]\d{9}$/.test(String(customer_phone))) {
     return res.status(400).json({ error: 'Enter a valid 10-digit phone number' });
   }
 
@@ -491,7 +522,7 @@ app.post('/api/orders', (req, res) => {
     const row = findItem.get(id);
     if (!row) return res.status(400).json({ error: `Item ${id} is not on the menu` });
     if (!row.available) return res.status(409).json({ error: `${row.name} is not available right now` });
-    lines.push({ id: row.id, name: row.name, price: row.price, quantity, notes: String(i.notes || '') });
+    lines.push({ id: row.id, name: row.name, price: row.price, quantity, notes: cleanText(i.notes, 120) });
   }
   const subtotal = +lines.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2);
 
@@ -526,9 +557,9 @@ app.post('/api/orders', (req, res) => {
     if (coupon && useCoupon.run(coupon.id).changes === 1) discountAmt = +discountFor(coupon).toFixed(2);
     const total = +(subtotal - discountAmt).toFixed(2);
     const { lastInsertRowid } = insertOrder.run(
-      table_number, customer_name || '', customer_phone || '', notes || '',
+      table_number, customer_name, customer_phone ? String(customer_phone) : '', notes,
       total, discountAmt, discountAmt > 0 ? coupon.code.toUpperCase() : '',
-      (order_type || 'indoor').toLowerCase()
+      order_type
     );
     for (const l of lines) {
       insertItem.run(lastInsertRowid, l.id, l.name, l.price, l.quantity, l.notes);
@@ -548,7 +579,7 @@ app.post('/api/orders', (req, res) => {
   ).get(orderId);
   const waitMinutes = Math.max(5, activeCount * 4 + 5);
 
-  io.emit('new_order', order);  dbSync();
+  emitOrder('new_order', order);  dbSync();
   waOrderReceived(order); // WhatsApp: order received
   res.json({ success: true, order_id: orderId, wait_minutes: waitMinutes, order });
 });
@@ -557,6 +588,18 @@ app.post('/api/orders', (req, res) => {
 function publicOrder(o) {
   const { customer_phone, ...rest } = o;
   return rest;
+}
+
+function loadOrder(id) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+  if (order) order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
+  return order;
+}
+
+// Staff screens get the full order; everyone else (menu and status pages) gets it without the phone number.
+function emitOrder(event, order) {
+  io.to('staff').emit(event, order);
+  io.except('staff').emit(event, publicOrder(order));
 }
 
 app.get('/api/orders', (req, res) => {
@@ -594,10 +637,10 @@ app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
   if (!allowed.includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
+  if (!loadOrder(req.params.id)) return res.status(404).json({ error: 'Order not found' });
   db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, req.params.id);
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-  io.emit('order_updated', order);  dbSync();
+  const order = loadOrder(req.params.id);
+  emitOrder('order_updated', order);  dbSync();
   // WhatsApp notifications on key status transitions
   if (status === 'preparing') waPreparingStarted(order);
   if (status === 'done')      waOrderReady(order);
@@ -605,49 +648,62 @@ app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
 });
 
 app.patch('/api/orders/:id', requireAuth, (req, res) => {
-  const { table_number, waiter_name, order_type, customer_name } = req.body;
+  const { table_number, waiter_name, order_type, customer_name } = req.body || {};
+  if (!loadOrder(req.params.id)) return res.status(404).json({ error: 'Order not found' });
   const fields = [], vals = [];
-  if (table_number  !== undefined) { fields.push('table_number = ?');  vals.push(Number(table_number)); }
-  if (waiter_name   !== undefined) { fields.push('waiter_name = ?');   vals.push(waiter_name); }
-  if (order_type    !== undefined) { fields.push('order_type = ?');    vals.push(order_type); }
-  if (customer_name !== undefined) { fields.push('customer_name = ?'); vals.push(customer_name); }
+  if (table_number !== undefined) {
+    const t = Number(table_number);
+    if (!Number.isInteger(t) || t < 1 || t > 9999) return res.status(400).json({ error: 'Invalid table number' });
+    fields.push('table_number = ?'); vals.push(t);
+  }
+  if (waiter_name !== undefined) { fields.push('waiter_name = ?'); vals.push(cleanText(waiter_name, 60)); }
+  if (order_type !== undefined) {
+    const t = cleanText(order_type, 20).toLowerCase();
+    if (!ORDER_TYPES.includes(t)) return res.status(400).json({ error: 'Invalid order type' });
+    fields.push('order_type = ?'); vals.push(t);
+  }
+  if (customer_name !== undefined) { fields.push('customer_name = ?'); vals.push(cleanText(customer_name, 60)); }
   if (!fields.length) return res.status(400).json({ error: 'Nothing to update' });
   vals.push(req.params.id);
   db.prepare(`UPDATE orders SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-  io.emit('order_updated', order);  dbSync();
+  const order = loadOrder(req.params.id);
+  emitOrder('order_updated', order);  dbSync();
   res.json(order);
 });
 
+// Totals follow the same rule as new orders: subtotal - discount + tip (menu prices already include GST).
+function refreshTotal(id) {
+  const o = db.prepare('SELECT discount, tip FROM orders WHERE id = ?').get(id);
+  const subtotal = db.prepare('SELECT SUM(item_price * quantity) as s FROM order_items WHERE order_id = ?').get(id).s || 0;
+  const total = +(subtotal - (o.discount || 0) + (o.tip || 0)).toFixed(2);
+  db.prepare('UPDATE orders SET total = ? WHERE id = ?').run(total, id);
+}
+
 app.patch('/api/orders/:id/discount', requireAuth, (req, res) => {
-  const { discount, type } = req.body;
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+  const { discount, type } = req.body || {};
+  const order = loadOrder(req.params.id);
   if (!order) return res.status(404).json({ error: 'Not found' });
-  const subtotal = db.prepare('SELECT SUM(item_price * quantity) as s FROM order_items WHERE order_id = ?').get(req.params.id).s || 0;
-  const discountAmt = type === 'percent' ? (subtotal * discount / 100) : Number(discount);
-  const tax = (subtotal - discountAmt) * 0.05;
-  const newTotal = subtotal - discountAmt + tax;
-  db.prepare('UPDATE orders SET discount = ?, total = ? WHERE id = ?').run(discountAmt, newTotal, req.params.id);
-  const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  updated.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id);
-  io.emit('order_updated', updated);  dbSync();
+  const value = Number(discount);
+  const subtotal = order.items.reduce((s, i) => s + i.item_price * i.quantity, 0);
+  if (!Number.isFinite(value) || value < 0 || (type === 'percent' && value > 100)) {
+    return res.status(400).json({ error: 'Discount must be a positive amount, or 0 to 100 percent' });
+  }
+  const discountAmt = +Math.min(type === 'percent' ? subtotal * value / 100 : value, subtotal).toFixed(2);
+  db.prepare('UPDATE orders SET discount = ? WHERE id = ?').run(discountAmt, req.params.id);
+  refreshTotal(req.params.id);
+  const updated = loadOrder(req.params.id);
+  emitOrder('order_updated', updated);  dbSync();
   res.json(updated);
 });
 
 app.patch('/api/orders/:id/tip', requireAuth, (req, res) => {
-  const { tip } = req.body;
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  if (!order) return res.status(404).json({ error: 'Not found' });
-  // Remove old tip, add new
-  const subtotal = db.prepare('SELECT SUM(item_price * quantity) as s FROM order_items WHERE order_id = ?').get(req.params.id).s || 0;
-  const discount = order.discount || 0;
-  const tax = (subtotal - discount) * 0.05;
-  const newTotal = subtotal - discount + tax + Number(tip);
-  db.prepare('UPDATE orders SET tip = ?, total = ? WHERE id = ?').run(Number(tip), newTotal, req.params.id);
-  const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  updated.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id);
-  io.emit('order_updated', updated);  dbSync();
+  const tip = Number(req.body && req.body.tip);
+  if (!loadOrder(req.params.id)) return res.status(404).json({ error: 'Not found' });
+  if (!isMoney(tip)) return res.status(400).json({ error: 'Tip must be a positive amount' });
+  db.prepare('UPDATE orders SET tip = ? WHERE id = ?').run(+tip.toFixed(2), req.params.id);
+  refreshTotal(req.params.id);
+  const updated = loadOrder(req.params.id);
+  emitOrder('order_updated', updated);  dbSync();
   res.json(updated);
 });
 
@@ -661,8 +717,8 @@ app.get('/api/tables', (req, res) => {
 });
 
 app.post('/api/tables', requireAuth, (req, res) => {
-  const { area = 'indoor' } = req.body;
-  const a = area.toLowerCase();
+  const a = cleanText((req.body && req.body.area) || 'indoor', 20).toLowerCase();
+  if (!ORDER_TYPES.includes(a)) return res.status(400).json({ error: 'Unknown area' });
   // Global sequence — T numbers are unique across ALL areas, never reset
   const fromRows    = db.prepare('SELECT MAX(number) as mx FROM tables').get().mx || 0;
   const counterKey  = 'table_seq_global';
@@ -693,11 +749,23 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.patch('/api/settings', requireAdmin, (req, res) => {
-  const allowed = ['ordering_enabled', 'restaurant_name', 'tax_rate'];
-  const updates = Object.entries(req.body || {}).filter(([k]) => allowed.includes(k));
+  const updates = [];
+  for (const [k, v] of Object.entries(req.body || {})) {
+    if (k === 'ordering_enabled') {
+      updates.push([k, [true, 1, '1', 'true'].includes(v) ? '1' : '0']);
+    } else if (k === 'restaurant_name') {
+      const name = cleanText(v, 60);
+      if (!name) return res.status(400).json({ error: 'Restaurant name cannot be empty' });
+      updates.push([k, name]);
+    } else if (k === 'tax_rate') {
+      const rate = Number(v);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 100) return res.status(400).json({ error: 'Tax rate must be between 0 and 100' });
+      updates.push([k, String(rate)]);
+    }
+  }
   if (!updates.length) return res.status(400).json({ error: 'No valid keys' });
   const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
-  updates.forEach(([k, v]) => stmt.run(k, String(v)));
+  updates.forEach(([k, v]) => stmt.run(k, v));
   // Broadcast setting change to all connected clients
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const out = {};
@@ -724,16 +792,31 @@ setInterval(() => {
   for (const [token, s] of sessions) if (s.expiry < now) sessions.delete(token);
 }, 60 * 60 * 1000);
 
-// Rate limiter: max 10 attempts per IP per 15 min
+// Rate limiter: 10 failed logins per IP per 15 minutes
 const loginAttempts = new Map();
+const LOGIN_WINDOW = 15 * 60 * 1000;
 function checkRateLimit(ip) {
+  const e = loginAttempts.get(ip);
+  return !e || Date.now() > e.resetAt || e.count < 10;
+}
+function recordFailure(ip) {
   const now = Date.now();
-  const win = 15 * 60 * 1000;
-  const entry = loginAttempts.get(ip) || { count: 0, resetAt: now + win };
-  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + win; }
-  entry.count++;
-  loginAttempts.set(ip, entry);
-  return entry.count <= 10;
+  const e = loginAttempts.get(ip);
+  if (!e || now > e.resetAt) loginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW });
+  else e.count++;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of loginAttempts) if (now > e.resetAt) loginAttempts.delete(ip);
+}, LOGIN_WINDOW);
+
+// Compare secrets in constant time so response timing doesn't leak how much matched.
+function safeEqual(a, b) {
+  const h = v => crypto.createHash('sha256').update(String(v ?? '')).digest();
+  return crypto.timingSafeEqual(h(a), h(b));
+}
+if (['admin', 'password', '123456'].includes(ADMIN_PASS) || ADMIN_PASS.length < 8) {
+  console.warn('[WARN] ADMIN_PASSWORD is weak. Use at least 8 characters that are hard to guess.');
 }
 
 function getSession(req) {
@@ -763,15 +846,16 @@ const POS_PIN = process.env.POS_PIN;
 if (!POS_PIN) { console.error('[FATAL] POS_PIN env var must be set'); process.exit(1); }
 
 app.post('/api/pos/login', (req, res) => {
-  const ip = req.ip || req.connection.remoteAddress;
+  const ip = req.ip || req.socket.remoteAddress;
   if (!checkRateLimit(ip)) {
     return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
   }
-  if (req.body.pin === POS_PIN) {
+  if (safeEqual(req.body && req.body.pin, POS_PIN)) {
     const token = crypto.randomBytes(32).toString('hex');
     sessions.set(token, { expiry: Date.now() + TOKEN_TTL, role: 'pos' });
     return res.json({ token });
   }
+  recordFailure(ip);
   res.status(401).json({ error: 'Wrong PIN' });
 });
 
@@ -783,18 +867,19 @@ app.post('/api/pos/logout', requireAuth, (req, res) => {
 
 // ── ADMIN LOGIN ────────────────────────────────────────────────────────────
 app.post('/api/admin/login', (req, res) => {
-  const ip = req.ip || req.connection.remoteAddress;
+  const ip = req.ip || req.socket.remoteAddress;
   if (!checkRateLimit(ip)) {
     return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
   }
-  const { email, password } = req.body;
-  const emailOk = email?.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase();
-  const passOk  = password === ADMIN_PASS;
+  const { email, password } = req.body || {};
+  const emailOk = safeEqual(String(email || '').toLowerCase().trim(), ADMIN_EMAIL.toLowerCase());
+  const passOk  = safeEqual(password, ADMIN_PASS);
   if (emailOk && passOk) {
     const token = crypto.randomBytes(32).toString('hex');
     sessions.set(token, { expiry: Date.now() + TOKEN_TTL, role: 'admin' });
     return res.json({ token });
   }
+  recordFailure(ip);
   res.status(401).json({ error: 'Invalid email or password' });
 });
 
@@ -812,7 +897,8 @@ app.get('/api/admin/menu', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/categories', requireAdmin, (req, res) => {
-  const { name } = req.body;
+  const name = cleanText(req.body && req.body.name, 60);
+  if (!name) return res.status(400).json({ error: 'Category name is required' });
   const { max } = db.prepare('SELECT MAX(sort_order) as max FROM categories').get();
   const { lastInsertRowid: id } = db.prepare('INSERT INTO categories (name, sort_order) VALUES (?, ?)').run(name, (max || 0) + 1);
   res.json({ id, name, sort_order: (max || 0) + 1 });
@@ -825,19 +911,33 @@ app.delete('/api/admin/categories/:id', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/items', requireAdmin, (req, res) => {
-  const { category_id, name, description, price } = req.body;
+  const b = req.body || {};
+  const name = cleanText(b.name, 80), description = cleanText(b.description, 200);
+  const price = Number(b.price), category_id = Number(b.category_id);
+  if (!name || !isMoney(price)) return res.status(400).json({ error: 'Item needs a name and a valid price' });
+  if (!db.prepare('SELECT id FROM categories WHERE id = ?').get(category_id)) {
+    return res.status(400).json({ error: 'Pick a category that exists' });
+  }
   const { lastInsertRowid: id } = db.prepare(
     'INSERT INTO menu_items (category_id, name, description, price) VALUES (?, ?, ?, ?)'
-  ).run(category_id, name, description || '', price);
+  ).run(category_id, name, description, price);
   res.json({ id, category_id, name, description, price, available: 1 });
 });
 
 app.put('/api/admin/items/:id', requireAdmin, (req, res) => {
-  const { name, description, price, available } = req.body;
+  const item = db.prepare('SELECT * FROM menu_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  const b = req.body || {};
+  // Fields left out keep their current value.
+  const name = b.name !== undefined ? cleanText(b.name, 80) : item.name;
+  const description = b.description !== undefined ? cleanText(b.description, 200) : item.description;
+  const price = b.price !== undefined ? Number(b.price) : item.price;
+  const available = b.available !== undefined ? (b.available ? 1 : 0) : item.available;
+  if (!name || !isMoney(price)) return res.status(400).json({ error: 'Item needs a name and a valid price' });
   db.prepare(
     'UPDATE menu_items SET name = ?, description = ?, price = ?, available = ? WHERE id = ?'
-  ).run(name, description, price, available ? 1 : 0, req.params.id);
-  io.emit('item_availability', { id: Number(req.params.id), available: available ? true : false });
+  ).run(name, description, price, available, req.params.id);
+  io.emit('item_availability', { id: Number(req.params.id), available: available === 1 });
   res.json({ success: true });
 });
 
@@ -848,6 +948,7 @@ app.delete('/api/admin/items/:id', requireAdmin, (req, res) => {
 
 app.patch('/api/admin/items/:id/toggle', requireAdmin, (req, res) => {
   const item = db.prepare('SELECT available FROM menu_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
   const next = item.available ? 0 : 1;
   db.prepare('UPDATE menu_items SET available = ? WHERE id = ?').run(next, req.params.id);
   io.emit('item_availability', { id: Number(req.params.id), available: next === 1 });
@@ -856,6 +957,7 @@ app.patch('/api/admin/items/:id/toggle', requireAdmin, (req, res) => {
 
 app.patch('/api/admin/items/:id/toggle-special', requireAdmin, (req, res) => {
   const item = db.prepare('SELECT is_house_special FROM menu_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
   const next = item.is_house_special ? 0 : 1;
   db.prepare('UPDATE menu_items SET is_house_special = ? WHERE id = ?').run(next, req.params.id);
   res.json({ is_house_special: next });
@@ -863,20 +965,25 @@ app.patch('/api/admin/items/:id/toggle-special', requireAdmin, (req, res) => {
 
 // ── COUPON ADMIN CRUD ─────────────────────────────────────────────────────────
 app.get('/api/admin/coupons', requireAdmin, (req, res) => {
-  const rows = db.prepare('SELECT * FROM coupons ORDER BY created_at DESC').all();
+  const rows = db.prepare('SELECT * FROM coupons ORDER BY id DESC').all();
   res.json(rows);
 });
 
 app.post('/api/admin/coupons', requireAdmin, (req, res) => {
-  const { code, discount_type, discount_value, min_order, max_uses, description, expires_at } = req.body;
-  if (!code || !discount_type || discount_value == null)
+  const { discount_type, discount_value, min_order, max_uses, expires_at } = req.body || {};
+  const code = cleanText(req.body && req.body.code, 40).replace(/\s/g, '');
+  const description = cleanText(req.body && req.body.description, 120);
+  if (!code || !['percent', 'flat'].includes(discount_type) || discount_value == null)
     return res.status(400).json({ error: 'code, discount_type and discount_value required' });
+  const v = Number(discount_value);
+  if (!isMoney(v) || (discount_type === 'percent' && v > 100))
+    return res.status(400).json({ error: 'Discount must be a positive amount, or 0 to 100 percent' });
   try {
     const r = db.prepare(
       `INSERT INTO coupons (code, discount_type, discount_value, min_order, max_uses, description, expires_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(code.trim().toUpperCase(), discount_type, +discount_value,
-          +(min_order||0), +(max_uses||0), description||'', expires_at||null);
+    ).run(code.toUpperCase(), discount_type, v,
+          Math.max(0, +(min_order||0) || 0), Math.max(0, Math.floor(+(max_uses||0) || 0)), description, expires_at||null);
     res.json({ id: r.lastInsertRowid });
   } catch(e) { res.status(400).json({ error: 'Coupon code already exists' }); }
 });
@@ -886,8 +993,8 @@ app.patch('/api/admin/coupons/:id', requireAdmin, (req, res) => {
   const fields = [];
   const vals   = [];
   if (active    !== undefined) { fields.push('active = ?');      vals.push(active ? 1 : 0); }
-  if (description !== undefined){ fields.push('description = ?'); vals.push(description); }
-  if (max_uses  !== undefined) { fields.push('max_uses = ?');    vals.push(+max_uses); }
+  if (description !== undefined){ fields.push('description = ?'); vals.push(cleanText(description, 120)); }
+  if (max_uses  !== undefined) { fields.push('max_uses = ?');    vals.push(Math.max(0, Math.floor(+max_uses || 0))); }
   if (expires_at !== undefined){ fields.push('expires_at = ?'); vals.push(expires_at||null); }
   if (!fields.length) return res.status(400).json({ error: 'Nothing to update' });
   vals.push(req.params.id);
@@ -901,9 +1008,28 @@ app.delete('/api/admin/coupons/:id', requireAdmin, (req, res) => {
 });
 
 // ── SOCKET.IO ────────────────────────────────────────────────────────────────
+// Staff screens send their login token when connecting and join the 'staff' room.
+io.use((socket, next) => {
+  const token = socket.handshake.auth && socket.handshake.auth.token;
+  const s = token && sessions.get(token);
+  socket.data.staff = !!(s && s.expiry > Date.now());
+  next();
+});
+
 io.on('connection', socket => {
+  if (socket.data.staff) socket.join('staff');
   console.log(`[socket] connected: ${socket.id}`);
   socket.on('disconnect', () => console.log(`[socket] disconnected: ${socket.id}`));
+});
+
+// ── ERRORS ────────────────────────────────────────────────────────────────────
+// Unknown API routes and unexpected errors answer with short JSON, never a stack trace.
+app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Request too large' });
+  console.error('[error]', req.method, req.path, err);
+  res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });
 
 // ── START ─────────────────────────────────────────────────────────────────────
