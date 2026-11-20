@@ -1442,7 +1442,7 @@ function renderSalesChart(days){ // days: [{date,rev}]
 // ── DASHBOARD ──
 let _dashOrders=[];
 async function loadDash(){
-  const r=await fetch('/api/orders?status=all');
+  const r=await adminFetch('/api/orders?status=all');
   _dashOrders=await r.json();
 
   const {from,to,label}=drRange();
@@ -1711,7 +1711,7 @@ async function loadCRM(){
   if(!el) return;
   el.innerHTML='<div class="empty">Loading…</div>';
   try{
-    const r=await fetch('/api/orders?status=all');
+    const r=await adminFetch('/api/orders?status=all');
     const orders=await r.json();
 
     // ── Build customer map keyed by phone (fallback: name) ──────────────
@@ -1840,7 +1840,7 @@ function toggleCRMHistory(btn){
 
 // ── KITCHEN ──
 async function loadKitchen(){
-  const r=await fetch('/api/orders?status=all');
+  const r=await adminFetch('/api/orders?status=all');
   allOrders=await r.json();
   renderKCounts(); renderKitchen();
 }
@@ -2093,7 +2093,7 @@ async function delItem(id){
 // ── ORDERS ──
 let _ordersRaw=[];
 async function loadOrders(){
-  const r=await fetch('/api/orders?status=all');
+  const r=await adminFetch('/api/orders?status=all');
   _ordersRaw=await r.json();
   renderOrders();
 }
@@ -2138,7 +2138,7 @@ async function loadTables(){
   const r=await fetch(`/api/tables?area=${curArea}`);
   tablesData=await r.json();
   // also fetch orders to show occupied
-  const ro=await fetch('/api/orders?status=all');
+  const ro=await adminFetch('/api/orders?status=all');
   const orders=await ro.json();
   const active=orders.filter(o=>!['settled','cancelled'].includes(o.status)&&(o.order_type||'indoor')===curArea);
   const occupied=new Set(active.map(o=>Number(o.table_number)));
@@ -2261,7 +2261,7 @@ async function loadAccounting(){
   const to=document.getElementById('acctTo')?.value;
   if(!from||!to){toast('Select a date range first');return;}
 
-  const r=await fetch('/api/orders?status=all');
+  const r=await adminFetch('/api/orders?status=all');
   const all=await r.json();
   const inRange=all.filter(o=>{const d=new Date(o.created_at).toISOString().slice(0,10);return d>=from&&d<=to;});
   const settled=inRange.filter(o=>o.status==='settled');
@@ -2416,7 +2416,7 @@ async function loadReports(){
   const from=document.getElementById('repFrom').value;
   const to=document.getElementById('repTo').value;
   if(!from||!to){toast('Select a date range');return;}
-  const r=await fetch('/api/orders?status=all');
+  const r=await adminFetch('/api/orders?status=all');
   const all=await r.json();
   _repOrders=all.filter(o=>{
     const d=new Date(o.created_at).toISOString().slice(0,10);

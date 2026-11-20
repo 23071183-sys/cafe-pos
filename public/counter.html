@@ -512,7 +512,7 @@
 
   // ── LOAD ORDERS ───────────────────────────────────────────
   async function loadOrders() {
-    const r = await fetch('/api/orders?status=all');
+    const r = await fetch('/api/orders?status=all', { headers: posHeaders() });
     const all = await r.json();
     // Keep only today + active (not done for > 1h)
     orders = all.filter(o => {

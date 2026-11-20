@@ -469,7 +469,7 @@ app.post('/api/coupons/redeem', (req, res) => {
 // ── ORDER API ────────────────────────────────────────────────────────────────
 app.post('/api/orders', (req, res) => {
   const { table_number, customer_name, customer_phone, notes, items, coupon_code, order_type } = req.body;
-  if (!table_number || !items?.length) {
+  if (!table_number || !Array.isArray(items) || !items.length) {
     return res.status(400).json({ error: 'table_number and items are required' });
   }
   // Phone optional for POS; only validate format if provided
@@ -477,21 +477,37 @@ app.post('/api/orders', (req, res) => {
     return res.status(400).json({ error: 'Enter a valid 10-digit phone number' });
   }
 
-  const subtotal = items.reduce((s, i) => s + (i.price || i.item_price) * i.quantity, 0);
-
-  // Apply coupon if provided
-  let discountAmt = 0;
-  let validCoupon = null;
-  if (coupon_code) {
-    const coupon = db.prepare('SELECT * FROM coupons WHERE code = ? COLLATE NOCASE AND active = 1').get(coupon_code.trim());
-    if (coupon && !(coupon.max_uses > 0 && coupon.uses_count >= coupon.max_uses)) {
-      discountAmt = coupon.discount_type === 'percent'
-        ? Math.min((subtotal * coupon.discount_value) / 100, subtotal)
-        : Math.min(coupon.discount_value, subtotal);
-      validCoupon = coupon;
+  // Prices and names come from the database, never from the browser, so a
+  // customer can't edit a price before ordering. The client only sends ids,
+  // quantities and notes.
+  const findItem = db.prepare('SELECT id, name, price, available FROM menu_items WHERE id = ?');
+  const lines = [];
+  for (const i of items) {
+    const id = Number(i.id ?? i.item_id);
+    const quantity = Number(i.quantity);
+    if (!Number.isInteger(id) || !Number.isInteger(quantity) || quantity < 1 || quantity > 50) {
+      return res.status(400).json({ error: 'Each item needs a valid id and a quantity from 1 to 50' });
     }
+    const row = findItem.get(id);
+    if (!row) return res.status(400).json({ error: `Item ${id} is not on the menu` });
+    if (!row.available) return res.status(409).json({ error: `${row.name} is not available right now` });
+    lines.push({ id: row.id, name: row.name, price: row.price, quantity, notes: String(i.notes || '') });
   }
-  const total = +(subtotal - discountAmt).toFixed(2);
+  const subtotal = +lines.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2);
+
+  // Coupon: same rules as /api/coupons/verify (active, not expired, minimum order).
+  // Its use is counted inside the order's transaction with a conditional update,
+  // so two orders at the same moment can't push it past max_uses.
+  let coupon = null;
+  if (coupon_code) {
+    const c = db.prepare('SELECT * FROM coupons WHERE code = ? COLLATE NOCASE AND active = 1').get(String(coupon_code).trim());
+    const expired = c && c.expires_at && new Date(c.expires_at) < new Date();
+    const belowMin = c && c.min_order > 0 && subtotal < c.min_order;
+    if (c && !expired && !belowMin) coupon = c;
+  }
+  const discountFor = c => c.discount_type === 'percent'
+    ? Math.min((subtotal * c.discount_value) / 100, subtotal)
+    : Math.min(c.discount_value, subtotal);
 
   const insertOrder = db.prepare(
     'INSERT INTO orders (table_number, customer_name, customer_phone, notes, total, discount, coupon_code, order_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -499,28 +515,29 @@ app.post('/api/orders', (req, res) => {
   const insertItem = db.prepare(
     'INSERT INTO order_items (order_id, item_id, item_name, item_price, quantity, notes) VALUES (?, ?, ?, ?, ?, ?)'
   );
+  const useCoupon = db.prepare(
+    'UPDATE coupons SET uses_count = uses_count + 1 WHERE id = ? AND (max_uses <= 0 OR uses_count < max_uses)'
+  );
 
   let orderId;
   db.exec('BEGIN');
   try {
+    let discountAmt = 0;
+    if (coupon && useCoupon.run(coupon.id).changes === 1) discountAmt = +discountFor(coupon).toFixed(2);
+    const total = +(subtotal - discountAmt).toFixed(2);
     const { lastInsertRowid } = insertOrder.run(
       table_number, customer_name || '', customer_phone || '', notes || '',
-      total, discountAmt, coupon_code ? coupon_code.trim().toUpperCase() : '',
+      total, discountAmt, discountAmt > 0 ? coupon.code.toUpperCase() : '',
       (order_type || 'indoor').toLowerCase()
     );
-    for (const item of items) {
-      insertItem.run(lastInsertRowid, item.id || item.item_id, item.name || item.item_name || '', item.price || item.item_price, item.quantity, item.notes || '');
+    for (const l of lines) {
+      insertItem.run(lastInsertRowid, l.id, l.name, l.price, l.quantity, l.notes);
     }
     orderId = lastInsertRowid;
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
-  }
-
-  // Increment coupon usage
-  if (validCoupon) {
-    db.prepare('UPDATE coupons SET uses_count = uses_count + 1 WHERE id = ?').run(validCoupon.id);
   }
 
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
@@ -536,13 +553,23 @@ app.post('/api/orders', (req, res) => {
   res.json({ success: true, order_id: orderId, wait_minutes: waitMinutes, order });
 });
 
+// Customers see orders without phone numbers; staff with a token see everything.
+function publicOrder(o) {
+  const { customer_phone, ...rest } = o;
+  return rest;
+}
+
 app.get('/api/orders', (req, res) => {
   const { status, table } = req.query;
+  const staff = !!getSession(req);
+  // Without a staff login, only a table's own recent orders can be read (the menu page uses this).
+  if (!staff && !table) return res.status(401).json({ error: 'Unauthorized' });
   let rows;
   if (table) {
+    const recent = staff ? '' : " AND created_at >= datetime('now', 'localtime', '-12 hours')";
     rows = status && status !== 'all'
-      ? db.prepare('SELECT * FROM orders WHERE table_number = ? AND status = ? ORDER BY created_at DESC').all(Number(table), status)
-      : db.prepare('SELECT * FROM orders WHERE table_number = ? ORDER BY created_at DESC LIMIT 50').all(Number(table));
+      ? db.prepare(`SELECT * FROM orders WHERE table_number = ? AND status = ?${recent} ORDER BY created_at DESC`).all(Number(table), status)
+      : db.prepare(`SELECT * FROM orders WHERE table_number = ?${recent} ORDER BY created_at DESC LIMIT 50`).all(Number(table));
   } else {
     rows = status && status !== 'all'
       ? db.prepare('SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC').all(status)
@@ -551,14 +578,14 @@ app.get('/api/orders', (req, res) => {
   for (const o of rows) {
     o.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(o.id);
   }
-  res.json(rows);
+  res.json(staff ? rows : rows.map(publicOrder));
 });
 
 app.get('/api/orders/:id', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Order not found' });
   order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-  res.json(order);
+  res.json(getSession(req) ? order : publicOrder(order));
 });
 
 app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
@@ -665,7 +692,7 @@ app.get('/api/settings', (req, res) => {
   res.json(rows); // return as array [{key,value}] for admin dashboard
 });
 
-app.patch('/api/settings', (req, res) => {
+app.patch('/api/settings', requireAdmin, (req, res) => {
   const allowed = ['ordering_enabled', 'restaurant_name', 'tax_rate'];
   const updates = Object.entries(req.body || {}).filter(([k]) => allowed.includes(k));
   if (!updates.length) return res.status(400).json({ error: 'No valid keys' });
